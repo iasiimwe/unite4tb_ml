@@ -63,7 +63,7 @@ The analysis is conducted in a **Linux-based command-line environment**, utilizi
    # Re-fit models with SNP effects to obtain ‘true’ parameter values (without missing data)
    Rscript 6_refitting_complete_dv_data.R
 
-   # Impute missing data using ChatGPT
+   # Impute missing data using OpenAI's GPT-4o via API ('ChatGPT' via command line)
    python 7a_chatgpt.py
 
    # Compare imputation methods (starting with simple ones)

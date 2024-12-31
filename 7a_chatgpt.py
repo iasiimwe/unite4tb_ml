@@ -170,8 +170,12 @@ for imputation_method in imputation_methods:
                 )
                 
                 # Loop until a dataset can be extracted
-                print("Beginning loop to identify extracted file id.")
-                while True:
+                print("Beginning loop to identify extracted file id.") 
+                
+                max_retries = 5  # Set the maximum number of retries
+                retry_count = 0  # Initialize the retry counter
+                
+                while retry_count < max_retries:
                     # Stream thread run
                     with client.beta.threads.runs.stream(
                         thread_id=thread.id,
@@ -229,7 +233,10 @@ for imputation_method in imputation_methods:
                     else:
                         print("No file ID found. Retrying...")
                     
-                    continue  # Repeat the loop if conditions are not met  
+                    retry_count += 1  # Increment the retry counter
+                    
+                if retry_count >= max_retries:
+                    print(f"Maximum retries ({max_retries}) reached. Skipping this iteration.")  
                 
                 # List to store images
                 images = []
@@ -284,7 +291,7 @@ for imputation_method in imputation_methods:
                 time_tb.loc[j - 1, "end"] = end_time.strftime("%Y-%m-%d %H:%M:%S")
                 
                 print(f"{round(j * 100 / n_datasets, 2)}% complete\n     Method: {imputation_method}\n     Mechanism: {mechanism}\n     Missing %: {missing_percentage}")
+                time.sleep(5)
             
             # Save time log
             time_tb.to_csv(f"{path_to_save}_time.csv", index=False)
-            time.sleep(3)

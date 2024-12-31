@@ -126,8 +126,6 @@ for (k in seq_along(imputation_methods)) {
         }
         #---------------------
         
-        end <- Sys.time()
-        
         # Join to the dv data
         dat <- ped_snps %>%
           left_join(dv_dat) %>%
@@ -218,6 +216,7 @@ for (k in seq_along(imputation_methods)) {
           }
         }
         
+        end <- Sys.time()
         time_tb$start[j] <- paste("T", as.character(ymd_hms(start)))
         time_tb$end[j] <- paste("T", as.character(ymd_hms(end)))
         
@@ -427,7 +426,7 @@ resultsi_long %>%
   theme_bw() +
   labs(
     title = "Barplots for Successful Runs",
-    x = "Missing Data Mechanism (Missingness Percentage)",
+    x = "Imputation Method (Missingness Percentage)",
     y = "Percentage"
   ) +
   theme(strip.text = element_text(size = 12, face = "bold"),
@@ -451,7 +450,7 @@ resultsi_long %>%
   theme_bw() +
   labs(
     # title = "Barplots of Bias Metrics by Parameter and Method",
-    x = "Missing Data Mechanism (Missingness Percentage)",
+    x = "Imputation Method (Missingness Percentage)",
     y = "Percentage"
   ) +
   theme(legend.position = "top",            # Set legend position to bottom-right
@@ -478,7 +477,7 @@ resultsi_long %>%
   facet_nested_wrap(vars(Mechanism, Parameter), nrow = 3, scales = "free_y") +
   # geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
   theme_bw() +
-  labs(x = "Missing Data Mechanism (Missingness Percentage)", y = "Percentage") +
+  labs(x = "Imputation Method (Missingness Percentage)", y = "Percentage") +
   theme(legend.position = "top",           
         legend.background = element_rect(fill = "white", colour = "black"), # Optional: Add a white background to the legend
         strip.text = element_text(size = 12, face = "bold"),

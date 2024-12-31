@@ -1,7 +1,7 @@
 # Load required packages
 # ---------------------
 library(lixoftConnectors)
-initializeLixoftConnectors(software = "simulx", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
+initializeLixoftConnectors(software = "simulx", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
 library(tidyverse)
 library(data.table)
 library(rxode2)
@@ -104,7 +104,7 @@ for (j in 1:n_datasets) {
   write.csv(select(dat, -ID2), "temp.csv", row.names = FALSE)
   
   # Start simulation
-  initializeLixoftConnectors(software = "monolix", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
+  initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
   newProject(data = list(dataFile = 'temp.csv',
                          headerTypes = c("id", "time", "evid", "occ", "amount", "observation", 
                                          "catcov", "regressor", rep("catcov", 9))),
@@ -160,7 +160,7 @@ for (j in 1:n_datasets) {
   # getPopulationParameterInformation()
   saveProject("temp.mlxtran")
   
-  initializeLixoftConnectors(software = "simulx", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
+  initializeLixoftConnectors(software = "simulx", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
   importProject("temp.mlxtran")
   setPreferences(exportsimulationfiles = TRUE)
   runSimulation()

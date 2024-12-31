@@ -1,7 +1,7 @@
 # Load required packages
 # ---------------------
 library(lixoftConnectors)
-initializeLixoftConnectors(software = "monolix", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
+initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
 library(tidyverse)
 library(data.table)
 
@@ -57,7 +57,7 @@ for (j in 1:n_datasets) {
     select(-NTIME, -ID2) 
   write.csv(dat, "temp.csv", row.names = FALSE)
 
-  initializeLixoftConnectors(software = "monolix", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
+  initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
   newProject(data = list(dataFile = 'temp.csv',
                          headerTypes = c("id", "time", "evid", "occ", "amount", "observation", 
                                          "catcov", "regressor", rep("catcov", 9))),

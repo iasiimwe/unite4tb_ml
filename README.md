@@ -8,7 +8,7 @@ Note: This is an ongoing project. Additional scripts will be uploaded, and exist
 ## Background
 TB remains a significant global health challenge, causing over 1 million deaths annually. Factors such as genetics, drug resistance, and pharmacokinetics profoundly impact treatment outcomes. The **UNITE4TB consortium** addresses these challenges using advanced tools like **genome-wide association studies (GWAS)** and ML techniques.
 
-Pyrazinamide is integral to TB treatment regimens but exhibits considerable pharmacokinetic variability due to pharmacogenetic and other influences. This repository leverages **simulated pharmacokinetic datasets** to assess the performance of ML and PMX approaches in:
+Pyrazinamide is integral to TB treatment regimens but shows considerable pharmacokinetic variability due to pharmacogenetic and other influences. This repository uses **simulated pharmacokinetic datasets** to assess the performance of ML and PMX approaches in:
 1. Covariate imputation (handling missing SNP data under MCAR, MAR, and MNAR mechanisms).
 2. Covariate selection.
 3. Computational performance.
@@ -32,7 +32,7 @@ The datasets used in this repository are simulated and include:
 
 Key features:
 - SNP data with up to 50% missing values introduced under MCAR, MAR, and MNAR mechanisms.
-- True covariates among 1,000–1,000,000 SNPs to mimic high-dimensional pharmacogenetic data.
+- Nine true covariates among 1,000–1,000,000 SNPs to mimic high-dimensional pharmacogenetic data.
 
 ## Analysis Workflow
 The analysis is conducted in a **Linux-based command-line environment**, utilizing **R (base)** or **Python (langchain_ai)** environments. Detailed instructions for installing `langchain` are available [here](https://github.com/langchain-ai/langchain). Alternatively, any Python environment can be used. 

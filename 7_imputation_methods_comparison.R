@@ -534,7 +534,7 @@ resultsi_long %>%
   ggplot(aes(x = Label, y = Value, fill = Metric)) +
   geom_bar(stat = "identity", position = "dodge") +
   facet_nested_wrap(vars(Mechanism, Parameter), nrow = 3, scales = "free_y") +
-  # geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 0.96, linetype = "dashed", color = "black") +
   theme_bw() +
   labs(x = "Imputation Method (Missingness Percentage)", y = "Percentage") +
   theme(legend.position = "top",           

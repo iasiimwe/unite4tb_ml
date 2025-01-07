@@ -1,7 +1,7 @@
 # Load required packages
 # ---------------------
 library(lixoftConnectors)
-initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
+initializeLixoftConnectors(software = "monolix", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
 library(tidyverse)
 library(data.table)
 library(ggh4x)
@@ -133,7 +133,7 @@ for (k in seq_along(imputation_methods)) {
           select(-NTIME, -ID2) 
         write.csv(dat, "temp.csv", row.names = FALSE)
         
-        initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)
+        initializeLixoftConnectors(software = "monolix", path = "C:/Program Files/Lixoft/MonolixSuite2024R1/", force = TRUE)
         newProject(data = list(dataFile = 'temp.csv',
                                headerTypes = c("id", "time", "evid", "occ", "amount", "observation", 
                                                "catcov", "regressor", rep("catcov", 9))),
@@ -260,7 +260,7 @@ performance_fn <- function(parami, original_data = original_dat, imputed_data = 
   estimated <- estimated[!is.na(estimated)]
   
   if (sum(is.na(estimated)) != length(estimated)) {
-    # Bias
+    # Bias (For acceptable performance we use an upper limit for PB of 5%. (Demirtas, Freels, and Yucel 2008))
     eMLAR <- (exp(mean(log(estimated / true))) - 1) * 100 # Handles proportional biases well, especially for log-normally distributed data.
     MRPE <- mean((estimated - true) / true) * 100 # Evaluates bias for individual observations.
     rMPE <- (mean(estimated - true) / mean(true)) * 100 # Evaluates overall bias in mean predictions vs. mean true.
@@ -269,12 +269,45 @@ performance_fn <- function(parami, original_data = original_dat, imputed_data = 
     eMALAR <- (exp(mean(abs(log(estimated / true)))) - 1) * 100 # Evaluates proportional precision, especially for log-normally distributed data.
     RMSRE <- (sqrt(mean(((estimated - true) / true)^2))) * 100 # Penalizes large deviations and outliers more heavily.
     MAPE <- mean(abs((estimated - true) / true)) * 100 # Measures average magnitude of relative errors (robust to outliers).
-    
-  } else { # All rows are NA
+
+      } else { # All rows are NA
     eMLAR <- NA; MRPE <- NA; rMPE <- NA; eMALAR <- NA; RMSRE <- NA; MAPE <- NA
   }
   return(tibble(data.frame(cbind(Success, eMLAR, MRPE, rMPE, eMALAR, RMSRE, MAPE))))
 }
+
+# Additional metrics (https://stefvanbuuren.name/fimd/sec-evaluation.html)
+  # Refers to Raw Bias (RB) as mean(estimated - true), and Percent Bias (PB) as MAPE
+  # Coverage rate (CR) - the proportion of confidence intervals that contain the true value.
+     # CR <- rowMeans(res[,, "2.5 %"] < true & true < res[,, "97.5 %"])
+  # Average width (AW) - the average width of the confidence interval, an indicator of statistical efficiency.
+     # AW <- rowMeans(res[,, "97.5 %"] - res[,, "2.5 %"])
+performance_fn_mice <- function(parami, original_data = original_dat, imputed_data = imputed_dat) {
+  # Replace rows with all zeros in the imputed data to NA
+  imputed_data[rowSums(imputed_data == 0) == ncol(imputed_data), ] <- NA
+  
+  # Get relevant columns
+  true <- pull(original_data[, parami])
+  estimated <- imputed_data[, parami]
+  estimated_se <- original_data[, paste0(parami, "_rse")]
+  estimated <- bind_cols(estimated, estimated_se)
+  colnames(estimated) <- c("paramj", "paramj_rse")
+  estimated <- estimated %>%
+    mutate(se = paramj * paramj_rse/ 100,
+           lower_ci = paramj + (qnorm(0.025) * se),
+           upper_ci = paramj + (qnorm(0.975) * se),
+           truej = true,
+           AW = upper_ci - lower_ci,
+           CR = if_else(lower_ci <= truej & upper_ci >= truej, 1, 0)) %>%
+    filter(!is.na(paramj)) # Remove the NAs
+  
+  if (nrow(estimated) > 0) {
+    AW <- mean(estimated$AW); CR <- mean(estimated$CR) # Don't multiply CR by 100, so that we can plot them together with AW
+    } else {
+      AW <- NA; CR <- NA
+    }
+  return(tibble(data.frame(cbind(AW, CR))))
+} 
 
 # Get original data results
 original_dat <- read_csv(paste0("missingness/complete.csv"), show_col_types = FALSE)
@@ -292,8 +325,11 @@ for (imputation_method in imputation_methods) {
         
         resultsi <- performance_fn(param_for_estimation) %>%
           mutate(Analysis = paste0(c(imputation_method, mechanism, missing_percentage, param_for_estimation), collapse = "|"))
+        if (!str_detect(param_for_estimation, "rse")) {
+          resultsj <- performance_fn_mice(param_for_estimation)
+          resultsi <- bind_cols(resultsi, resultsj)
+        }
         results <- bind_rows(results, resultsi)
-        
       }
     }
   }
@@ -404,7 +440,7 @@ resultsi_long <- results %>%
                                                   "b", "b RSE")),
          Label = factor(Label, levels = unique(Label)),
          Mechanism = factor(Mechanism, levels = unique(Mechanism))) %>%
-  pivot_longer(cols = c(Success, eMLAR, MRPE, rMPE, eMALAR, RMSRE, MAPE),
+  pivot_longer(cols = c(Success, eMLAR, MRPE, rMPE, eMALAR, RMSRE, MAPE, AW, CR),
                names_to = "Metric",
                values_to = "Value")
 
@@ -486,3 +522,26 @@ resultsi_long %>%
         axis.title = element_text(size = 12, face = "bold"))
 x <- 1
 ggsave("Precision.png", height = 9 * x, width = 16 * x)
+
+
+# Additional metrics (AW and CR)
+resultsi_long %>%
+  filter(Metric %in% c("AW", "CR")) %>%
+  filter(!str_detect(Parameter, "RSE")) %>%
+  mutate(Parameter = factor(Parameter, levels = c("Cl THETA", "Cl ETA",
+                                                  "ka THETA", "ka ETA", "b")),
+         Metric = case_when(Metric == "AW" ~ "Average width", Metric == "CR" ~ "Coverage rate" )) %>%
+  ggplot(aes(x = Label, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_nested_wrap(vars(Mechanism, Parameter), nrow = 3, scales = "free_y") +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_bw() +
+  labs(x = "Imputation Method (Missingness Percentage)", y = "Percentage") +
+  theme(legend.position = "top",           
+        legend.background = element_rect(fill = "white", colour = "black"), # Optional: Add a white background to the legend
+        strip.text = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 10, colour = "black"),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"))
+x <- 1
+ggsave("AW_CR.png", height = 9 * x, width = 16 * x)

@@ -67,7 +67,7 @@ The analysis is conducted in a **Linux-based command-line environment**, utilizi
    python 7a_chatgpt.py
    Rscript 7b_Minimac4_preparation.R
    Rscript 7c_Minimac4_imputation_server.R
-   ./ 7d_Minimac4_results_extraction.sh
+   ./7d_Minimac4_results_extraction.sh
 
    # Refit imputed datasets using several methods
    Rscript 8a_fit_singly_imputed_data.R 

@@ -1,20 +1,3 @@
-# # To log in: open command prompt
-# ssh iasiimwe@euler01.liv.ac.uk
-# ssh gauss06
-# source /pub59/iasiimwe/miniconda3/bin/activate base
-# cd /pub59/iasiimwe/imputationserver
-# export PATH=/pub59/iasiimwe/imputationserver/singularity/go/bin:$PATH
-# export PATH=/pub59/iasiimwe/imputationserver/singularity/bin:$PATH
-# export PATH=/pub59/iasiimwe/imputationserver/docker:$PATH
-# export PATH=/pub59/iasiimwe/imputationserver:$PATH
-# export PATH=/pub59/iasiimwe/imputationserver/jdk-23.0.1+11/bin:$PATH
-# # The local web service can now be started. By default, it runs on port 8082.
-# java -Xmx10G -Djavax.net.ssl.trustStore=/pub59/iasiimwe/imputationserver/jdk-23.0.1+11/lib/security/cacerts -jar cloudgene.jar server
-# # In a new terminal on your local machine, create an SSH tunnel through euler01 to gauss06
-# ssh -L 8082:gauss06:8082 iasiimwe@euler01.liv.ac.uk
-# # Once the tunnel is established, open a browser and go to:
-# http://localhost:8082
-
 # Load libraries
 library(data.table)
 library(tidyverse) 
@@ -22,7 +5,7 @@ library(tidyverse)
 # Relevant function
 not_scientific <- function(x) trimws(format(x, scientific = FALSE))
 
-TOKEN <- "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsIm5iZiI6MTczNzIwMjMxNSwibWFpbCI6ImkuYXNpaW13ZUBsaXZlcnBvb2wuYWMudWsiLCJhcGlfaGFzaCI6InRxVm9FS2tFUVpPc01XVHExcDFsNUlOUnhQRGdpciIsInJvbGVzIjpbXSwiaXNzIjoiY2xvdWRnZW5lIiwibmFtZSI6ImFkbWluIiwiYXBpIjp0cnVlLCJleHAiOjM4ODQ2ODU5NjIsInRva2VuX3R5cGUiOiJBUElfVE9LRU4iLCJpYXQiOjE3MzcyMDIzMTUsInVzZXJuYW1lIjoiYWRtaW4ifQ.VkVCVJtWgkwdaNl11f0d1Qmfv3OvIHBSeoYpiqwPUj4"
+TOKEN <- "abc123..."
 
 n_datasets <- 100
 

@@ -36,6 +36,8 @@ dominant_coding_fn <- function(x) {
 
 # Rubin's rule function to pool estimates from multiple imputations
 rubin_fn <- function(coef_estimates, coef_ses) {
+  # Number of imputations
+  m <- length(coef_estimates)
   # Calculate the mean of the estimates (pooled estimate)
   qbar <- mean(coef_estimates)
   # Calculate the mean within-imputation variance
@@ -43,13 +45,16 @@ rubin_fn <- function(coef_estimates, coef_ses) {
   # Calculate the between-imputation variance
   B <- var(coef_estimates)
   # Calculate the pooled variance
-  pooled_var <- ubar + (1 + (1/length(coef_estimates))) * B
+  pooled_var <- ubar + (1 + (1/m)) * B
   # Calculate the pooled standard error
   pooled_se <- sqrt(pooled_var)
-  # Return the pooled estimate, standard error, t-statistic, degrees of freedom, and p-value
+  # Degrees of freedom
+  df <- (m - 1) * ((ubar + (1 + 1/m) * B)/((1 + 1/m) * B))^2 # https://pubmed.ncbi.nlm.nih.gov/36346135/
+  # Return the pooled estimate, relative standard error, and degrees of freedom
   return(c(
     pooled_est = qbar,
-    pooled_rse = pooled_se * 100 / qbar
+    pooled_rse = pooled_se * 100 / qbar,
+    df = df
   ))
 }
 
@@ -77,8 +82,9 @@ for (k in seq_along(imputation_methods)) {
                      mechanism, "\n     missing %: ", missing_percentage))
       
       # Results storage matrix
-      params_for_estimation <- c("ka_theta", "ka_theta_rse", "ka_eta", "ka_eta_rse", 
-                                 "Cl_theta", "Cl_theta_rse", "Cl_eta", "Cl_eta_rse", "b", "b_rse")
+      params_for_estimation <- c("ka_theta", "ka_theta_rse", "ka_theta_df", "ka_eta", "ka_eta_rse", "ka_eta_df", 
+                                 "Cl_theta", "Cl_theta_rse", "Cl_theta_df", "Cl_eta", "Cl_eta_rse", "Cl_eta_df", 
+                                 "b", "b_rse", "b_df")
       results_matrix <- matrix(0, nrow = n_datasets, ncol = length(params_for_estimation),
                                dimnames = list(paste0("dataset_", 1:n_datasets), params_for_estimation))
       time_tb <- tibble(end = vector("character", n_datasets), 
@@ -104,7 +110,7 @@ for (k in seq_along(imputation_methods)) {
           select(SNP1:SNP9)
         if (max(apply(dat_check[, sapply(dat_check, is.numeric)], 2, function(x) sum(is.na(x)))) > 0) next
         
-        # Create a tibble to store pooled results
+        # Create a tibble to store results for pooling
         pooled_tb <- tibble(
           ka = rep(NA_real_, imputed_dat$m),
           ka_se = NA_real_,
@@ -215,17 +221,23 @@ for (k in seq_along(imputation_methods)) {
         # Pool the results
         estimates <- tibble(param = c("ka", "Cl", "omega_ka", "omega_Cl", "b"),
                             estimate = NA_real_,
-                            rses = NA_real_)
+                            rses = NA_real_,
+                            df = NA_real_)
         estimates[1, "estimate"] <- rubin_fn(pooled_tb$ka, pooled_tb$ka_se)["pooled_est"]
         estimates[1, "rses"] <- rubin_fn(pooled_tb$ka, pooled_tb$ka_se)["pooled_rse"]
+        estimates[1, "df"] <- rubin_fn(pooled_tb$ka, pooled_tb$ka_se)["df"]
         estimates[2, "estimate"] <- rubin_fn(pooled_tb$Cl, pooled_tb$Cl_se)["pooled_est"]
         estimates[2, "rses"] <- rubin_fn(pooled_tb$Cl, pooled_tb$Cl_se)["pooled_rse"]
+        estimates[2, "df"] <- rubin_fn(pooled_tb$Cl, pooled_tb$Cl_se)["df"]
         estimates[3, "estimate"] <- rubin_fn(pooled_tb$omega_ka, pooled_tb$omega_ka_se)["pooled_est"]
         estimates[3, "rses"] <- rubin_fn(pooled_tb$omega_ka, pooled_tb$omega_ka_se)["pooled_rse"]
+        estimates[3, "df"] <- rubin_fn(pooled_tb$omega_ka, pooled_tb$omega_ka_se)["df"]
         estimates[4, "estimate"] <- rubin_fn(pooled_tb$omega_Cl, pooled_tb$omega_Cl_se)["pooled_est"]
         estimates[4, "rses"] <- rubin_fn(pooled_tb$omega_Cl, pooled_tb$omega_Cl_se)["pooled_rse"]
+        estimates[4, "df"] <- rubin_fn(pooled_tb$omega_Cl, pooled_tb$omega_Cl_se)["df"]
         estimates[5, "estimate"] <- rubin_fn(pooled_tb$b, pooled_tb$b_se)["pooled_est"]
         estimates[5, "rses"] <- rubin_fn(pooled_tb$b, pooled_tb$b_se)["pooled_rse"]
+        estimates[5, "df"] <- rubin_fn(pooled_tb$b, pooled_tb$b_se)["df"]
         
         # Save the results
         for (parami in params_for_estimation) {
@@ -233,10 +245,13 @@ for (k in seq_along(imputation_methods)) {
           action <- case_when(
             str_detect(parami, "_theta$") ~ "theta",
             str_detect(parami, "_theta_rse") ~ "theta_rse",
+            str_detect(parami, "_theta_df") ~ "theta_df",
             str_detect(parami, "_eta$") ~ "eta",
             str_detect(parami, "_eta_rse") ~ "eta_rse",
+            str_detect(parami, "_eta_df") ~ "eta_df",
             str_detect(parami, "b$") ~ "b",
             str_detect(parami, "b_rse") ~ "b_rse",
+            str_detect(parami, "b_df") ~ "b_df",
             TRUE ~ NA_character_ # Default case
           )
           
@@ -245,10 +260,13 @@ for (k in seq_along(imputation_methods)) {
               action,
               "theta" = pull(filter(estimates, param == gsub("_theta$", "", parami)), estimate),
               "theta_rse" = pull(filter(estimates, param == gsub("_theta_rse", "", parami)), rses),
+              "theta_df" = pull(filter(estimates, param == gsub("_theta_df", "", parami)), df),
               "eta" = pull(filter(estimates, param == paste0("omega_", gsub("_eta$", "", parami))), estimate),
               "eta_rse" = pull(filter(estimates, param == paste0("omega_", gsub("_eta_rse", "", parami))), rses),
+              "eta_df" = pull(filter(estimates, param == paste0("omega_", gsub("_eta_df", "", parami))), df),
               "b" = pull(filter(estimates, param == parami), estimate),
-              "b_rse" = pull(filter(estimates, param == gsub("_rse", "", parami)), rses)
+              "b_rse" = pull(filter(estimates, param == gsub("_rse", "", parami)), rses),
+              "b_df" = pull(filter(estimates, param == gsub("_df", "", parami)), df)
             )
           }
         }

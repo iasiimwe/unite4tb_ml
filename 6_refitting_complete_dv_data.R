@@ -50,11 +50,12 @@ time_list <- rep(list(tibble(end = vector("character", n_datasets),
 k <- 1 # Only one method
 
 for (j in 1:n_datasets) {
-  # Get time of code execution start
-  start <- Sys.time()
-  
   dat <- read_csv(paste0("sim_DV/sim_data", j, "_", sim_date, ".csv"), show_col_types = FALSE) %>%
     select(-NTIME, -ID2) 
+
+  # Get time of code execution start
+  start <- Sys.time()
+
   write.csv(dat, "temp.csv", row.names = FALSE)
 
   initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2024R1/", force = TRUE)

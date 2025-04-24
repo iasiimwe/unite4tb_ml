@@ -4,16 +4,14 @@ library(tidyverse)
 
 # Number of datasets
 n_datasets <- 100
+plink_path <- "/pub59/iasiimwe/plink1.9/plink"
 
 # Set working directory
 setwd("/pub59/iasiimwe/TB/datasets")
 
 # Add folders if they don't exist
-if (!dir.exists("missing")) dir.create("missing")
-if (!dir.exists("missing/5")) dir.create("missing/5")
-if (!dir.exists("missing/10")) dir.create("missing/10")
-if (!dir.exists("missing/20")) dir.create("missing/20")
-if (!dir.exists("missing/50")) dir.create("missing/50")
+dirs <- c("missing", "missing/5", "missing/10", "missing/20", "missing/50")
+lapply(dirs, function(d) if (!dir.exists(d)) dir.create(d, recursive = TRUE))
 
 # Set seed for reproducibility
 set.seed(7)
@@ -138,7 +136,7 @@ results_matrix <- matrix(0, nrow = n_datasets, ncol = 16,
 
 for (i in 1:n_datasets) {
   # Get complete i'th dataset (covert to ped, tab delimited)
-  system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile 10_3/dat_10_3_", i, " --recode tab --out temp"))
+  system(paste0(plink_path, " --bfile 10_3/dat_10_3_", i, " --recode tab --out temp"))
   
   # Process ped and map_files
   ped <- tibble(fread("temp.ped", header = FALSE))
@@ -169,7 +167,7 @@ for (i in 1:n_datasets) {
                   file = "temp.ped", quote = FALSE, row.names = FALSE, col.names = FALSE, sep = " ")
 
       # Save binary files
-      system(paste0("/pub59/iasiimwe/plink1.9/plink --file temp --make-bed --out missing/", 
+      system(paste0(plink_path, " --file temp --make-bed --out missing/", 
                     missing_percent_values[[k]] * 100, "/dat_", mechanisms[[j]], "_", i))
 
       # True covariate missingness percentages

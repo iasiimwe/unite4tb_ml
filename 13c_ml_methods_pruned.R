@@ -1,0 +1,363 @@
+# Load required packages (assumes a new session)
+# ---------------------
+library(tidyverse)
+library(data.table)
+library(caret)
+library(glmnet) # LASSO
+library(randomForest) # RF
+library(lubridate) 
+
+select <- dplyr::select
+filter <- dplyr::filter
+mutate <- dplyr::mutate
+
+# Caret settings
+fitControl <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 5)
+
+# Dominant coding function
+dominant_coding_fn <- function(x) {
+  x <- gsub(" ", "", x) 
+  x[x == "00"] <- NA
+  y <- table(x)
+  y <- names(sort(-y)) # Sort in descending order, assume mutant type is the least abundant
+  if (length(y) == 3) x <- gsub(y[[3]], "1", x) # Give mutant homozygotes "1"
+  if (length(y) > 1) x <- gsub(y[[2]], "1", x) # Give heterozygotes "1" 
+  x <- gsub(y[[1]], "0", x) # Give homozygotes 0
+  return(as.numeric(x))
+}
+
+# Get top covariates 
+get_top_covar_tb_ml <- function(dataQ, mlmethod, sim_num, correlated_tibble1,
+                                seedx, penalized = FALSE, select_covar = FALSE) {
+  # Get importance
+  if (penalized && mlmethod %in% c("lasso", "elastic_net", "ridge")) {
+    if (mlmethod == "lasso") tune_alpha <- 1 else if (mlmethod == "elastic_net") tune_alpha <- 0.55 else tune_alpha <- 0
+    set.seed(seedx)     
+    lambdas <- train(y ~ ., data = dataQ,
+                     method = "glmnet", 
+                     trControl = fitControl, 
+                     verbose = FALSE)$results$lambda %>%
+      unique()
+    trained_mod <- train(y ~ ., data = dataQ,
+                         method = "glmnet", 
+                         trControl = fitControl, 
+                         verbose = FALSE,
+                         tuneGrid = expand.grid(alpha = tune_alpha, lambda = lambdas)) 
+  } else {
+    set.seed(seedx)     
+    trained_mod <- train(y ~ ., data = dataQ,
+                         method = mlmethod, 
+                         trControl = fitControl, 
+                         verbose = FALSE)
+  }
+  # Variable importance
+  top_covariates <- trained_mod %>% varImp()
+  top_covar_tb <- tibble(Covariates = rownames(data.frame(top_covariates$importance)),
+                         Importance = top_covariates$importance$Overall) %>%
+    arrange(desc(Importance)) %>%
+    filter(Importance != 0)
+  top_covar_tb <- top_covar_tb[1:min(n_true_snps, nrow(top_covar_tb)), ] %>% 
+    left_join(correlated_tibble1) %>% 
+    mutate(Method = mlmethod, .before = Covariates) %>% 
+    mutate(Simulation = sim_num, .before = Covariates) 
+  
+  return(top_covar_tb)
+}
+
+# General settings
+sim_date <-"23_12_2024"
+n_datasets <- 100
+scenarios <- c("low", "high")
+n_snps <- c("10_3", "10_4", "10_5", "10_6") 
+true_covar <- paste0("SNP", 1:9)
+n_true_snps <- length(true_covar)
+n_round <- 1 # rounding precision (Importance)
+set_seed <- 7
+chosen_params <- "_1000_5_0.1.prune.in"
+ml_methods <- c("glmnet", "rf", "gwas", "gwas_glmnet", "gwas_rf") 
+topx <- 100 # For GWAS then glmnet/rf
+cor_threshold1 <- as.numeric(gsub(".*_|\\.prune\\.in", "", chosen_params))
+
+for (effect_scenario in scenarios) {
+  # Add folders if they don't exist
+  if (!dir.exists(effect_scenario)) dir.create(effect_scenario)
+  folder_path <- paste0(effect_scenario, "/covariates")
+  if (!dir.exists(folder_path)) dir.create(folder_path)
+  
+  for (n_snp in n_snps) {
+
+    method_list <- rep(list(tibble()), length(ml_methods))
+    time_list <- rep(list(tibble(end = vector("character", n_datasets),
+                                 start = vector("character", n_datasets))), 
+                     length(ml_methods))
+    
+    for (j in 1:n_datasets) {
+      # Get DV data to get dict
+      dict <- read_csv(paste0("sim_DV_", effect_scenario, "/sim_data", j, "_", sim_date, ".csv"), show_col_types = FALSE) %>%
+        select(id = ID, ID2) %>%#
+        distinct()
+      
+      # Get ETAs (to use as outcome)
+      etas <- read_csv(paste0(effect_scenario, "/base_model/sim_", j, "_", "etas.csv"), show_col_types = FALSE) %>%
+        filter(OCC == 1) %>%
+        left_join(dict) %>%
+        select(ID2, y = eta_TVCl) 
+      
+      # Get original data to get the SNP names
+      dat_patho <- paste0(n_snp, "/dat_",n_snp, "_", j)
+      bim <- tibble(fread(paste0(dat_patho, ".bim"), header = FALSE))$V2
+      
+      # True covariates - we need to put them as the first 9 covariates for later tracking
+      true_snps <- fread(paste0("true_covar/true_snps_", j, ".txt"), header = FALSE, sep = " ")$V1
+      bim <- unique(c(true_snps, bim))
+
+      # Dictionary
+      dict_snps <- tibble(old = true_snps) %>%
+        mutate(new = paste0("SNP", row_number()))
+      
+      if (n_snp %in% c("10_3", "10_4", "10_5")) { 
+        
+        # Get pruned SNP data
+        dat_path <- paste0("pruned_", n_snp, "/dat_",n_snp, "_", j)
+        temp_path <- paste0("pruned_temp_", n_snp)
+        system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile ", dat_path, " --recode tab --out ", temp_path))
+        ped <- tibble(fread(paste0(temp_path, ".ped"), header = FALSE))
+        map <- tibble(fread(paste0(temp_path, ".map"), header = FALSE))
+        snps <- pull(map, V2)
+        ped_start <- ped %>% select(V1:V6) # This selects FID, IID, father's ID, mother's ID, sex and phenotype data
+        snp_columns <- colnames(ped)[!colnames(ped) %in% colnames(ped_start)]
+        ped_snps <- ped %>%
+          select(all_of(snp_columns)) 
+        colnames(ped_snps) <- snps 
+        
+        ped_snps <- ped_snps %>%
+          select(any_of(true_snps), everything()) %>% # This allows the order to be the same as in 'true_snps'
+          data.table()
+        ped_snps[, (colnames(ped_snps)) := lapply(.SD, dominant_coding_fn), .SDcols = colnames(ped_snps)]
+        ped_snps$ID2 <- ped_start$V1
+        
+      } else {
+        file <- read_csv(paste0(effect_scenario, "/gwas/pruned_", n_snp, "_results_gwas.csv"), show_col_types = FALSE)[j, ] %>%
+          pull() %>%
+          str_split(., "; ") %>%
+          unlist() 
+        
+        # Get the top x SNPs and extract them
+        tibble(old = file) %>%
+          left_join(select(dict_snps, old = new, new = old)) %>%
+          mutate(new = if_else(is.na(new), old, new)) %>% 
+          select(new) %>%
+          write.table(file = paste0("pruned_SNPs_to_extract_", n_snp, ".txt"), quote = FALSE, row.names = FALSE, col.names = FALSE)
+        
+        # Get pruned SNP data
+        dat_path <- paste0("pruned_", n_snp, "/dat_",n_snp, "_", j)
+        temp_path <- paste0("pruned_temp_", n_snp)
+        system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile ", dat_path, 
+                      " --extract pruned_SNPs_to_extract_", n_snp, ".txt --recode tab --out ", temp_path))
+        ped <- tibble(fread(paste0(temp_path, ".ped"), header = FALSE))
+        map <- tibble(fread(paste0(temp_path, ".map"), header = FALSE))
+        snps <- pull(map, V2)
+        ped_start <- ped %>% select(V1:V6) # This selects FID, IID, father's ID, mother's ID, sex and phenotype data
+        snp_columns <- colnames(ped)[!colnames(ped) %in% colnames(ped_start)]
+        ped_snps <- ped %>%
+          select(all_of(snp_columns)) 
+        colnames(ped_snps) <- snps 
+        ped_snps <- ped_snps %>%
+          select(any_of(true_snps), everything()) %>% # This allows the order to be the same as in 'true_snps'
+          data.table()
+        ped_snps[, (colnames(ped_snps)) := lapply(.SD, dominant_coding_fn), .SDcols = colnames(ped_snps)]
+        ped_snps$ID2 <- ped_start$V1
+      }
+      
+      # Add the outcome etas
+      first_n_snps <- tibble(old = colnames(ped_snps)[1:n_true_snps]) %>% # The true SNPs should be among the first n snps
+        left_join(dict_snps) %>%
+        mutate(new = ifelse(is.na(new), old, new)) %>%
+        pull(new)
+      colnames(ped_snps)[1:n_true_snps] <- first_n_snps
+      
+      ped_snps <- ped_snps %>%
+        left_join(etas) %>%
+        relocate(y, .before = 1) %>%
+        select(-ID2)
+
+      # Get highly-correlated SNPs (threshold 1)
+      system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile ", dat_patho, 
+                    " --r2 --ld-snp-list pruning/pruned_", n_snp, "_", j, chosen_params, 
+                    " --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 ",
+                    cor_threshold1, " --out pruned_tagged_snps_", n_snp))
+      cor_tb1 <- tibble(fread(paste0("pruned_tagged_snps_", n_snp, ".ld"))) %>%
+        filter(R2 >= cor_threshold1) %>%
+        select(SNP_A, SNP_B) %>%
+        left_join(rename(dict_snps, SNP_A = old, Covar = new))  %>%
+        mutate(Covar = ifelse(is.na(Covar), SNP_A, Covar)) %>%
+        left_join(rename(dict_snps, SNP_B = old, Correlated = new)) %>%
+        mutate(Correlated = ifelse(is.na(Correlated), SNP_B, Correlated)) %>%
+        group_by(Covar) %>%
+        summarize(Correlated = paste0(Correlated, collapse = ", ")) %>%
+        mutate(Correlated = str_remove_all(Correlated, paste0("\\b", Covar, "\\b")),
+               Correlated = str_trim(Correlated),  # Remove leading/trailing spaces
+               Correlated = gsub(", ,", ",", Correlated),
+               Correlated = gsub("^, |,$", "", Correlated),
+               Correlated = ifelse(Correlated == "", NA_character_, Correlated))
+      cor_tb1 <- cor_tb1 %>%
+        filter(!is.na(Correlated)) %>%
+        separate_rows(Correlated, sep = ", ") %>%
+        select(Covar = Correlated, Correlated = Covar) %>%
+        bind_rows(cor_tb1) %>%
+        group_by(Covar) %>%
+        summarize(Correlated = paste0(unique(unlist(str_split(Correlated, ", "))), collapse = ", ")) %>%
+        ungroup() %>%
+        rename(Covariates = Covar, Correlated_covar1 = Correlated)
+      
+      for (k in seq_along(ml_methods)) {
+        message(paste0("Starting Method: ", ml_methods[[k]]))
+        
+        # Get time of code execution start
+        start <- Sys.time()
+        
+        study <- ped_snps
+        
+        # Train method and get variable importance (round 1)
+        if (ml_methods[[k]] %in% c("glmnet", "rf")) {
+          if (n_snp == "10_6") next
+          top_covariate_tibble <- get_top_covar_tb_ml(study, ml_methods[[k]], j, cor_tb1, set_seed)
+        } else if (ml_methods[[k]] %in% c("gwas", "gwas_glmnet", "gwas_rf")) { 
+         
+          file <- read_csv(paste0(effect_scenario, "/gwas/pruned_", n_snp, "_results_gwas.csv"), show_col_types = FALSE)[j, ] %>%
+            pull() %>%
+            str_split(., "; ") %>%
+            unlist() 
+          
+          if (ml_methods[[k]] == "gwas") {
+            top_covariate_tibble <- tibble(old = file[1:n_true_snps]) %>%
+              left_join(dict_snps) %>%
+              mutate(new = if_else(is.na(new), old, new)) %>%
+              select(Covariates = new) %>%
+              left_join(cor_tb1) %>% 
+              mutate(Method = ml_methods[[k]], Simulation = j, .before = Covariates) 
+          } else {
+            # Get the top x SNPs
+            topx_snps <- tibble(old = file) %>%
+              left_join(dict_snps) %>%
+              mutate(new = if_else(is.na(new), old, new)) %>% 
+              pull(new)
+            new_ml_method <- ifelse(ml_methods[[k]] == "gwas_glmnet", "glmnet", "rf") 
+            top_covariate_tibble <- get_top_covar_tb_ml(study %>% select(y, any_of(topx_snps)), 
+                                                        new_ml_method, j, cor_tb1, set_seed)
+          }
+        } else {
+          stop("Unknown method!")
+        }
+        
+        # Link to the pruned data, split the comma-separated SNPs into a vector
+        SNPs_to_regress <- top_covariate_tibble %>%
+          separate_rows(Correlated_covar1, sep = ", ")
+        SNPs_to_regress <- unique(c(SNPs_to_regress$Covariates, SNPs_to_regress$Correlated_covar1))
+        SNPs_to_regress <- SNPs_to_regress[SNPs_to_regress != "NA"]
+        SNPs_to_regress <- SNPs_to_regress[!is.na(SNPs_to_regress)]
+        SNPs_to_regress <- gsub("`", "", SNPs_to_regress)
+        
+        if (length(SNPs_to_regress) > n_true_snps) {
+          # Save SNPs to extract
+          tibble(new = SNPs_to_regress) %>% 
+            left_join(dict_snps) %>%
+            mutate(old = ifelse(is.na(old), new, old)) %>%
+            select(old) %>%
+            write.table(file = paste0("round1_pruned_SNPs_to_extract_", n_snp, ".txt"), quote = FALSE, row.names = FALSE, col.names = FALSE)
+          
+          if (ml_methods[[k]] %in% c("glmnet", "rf")) {
+            if (n_snp == "10_6") next
+            
+            # Get new dataset
+            temp_path <- paste0("new_temp_round1_", n_snp)
+            system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile ", dat_patho,
+                          " --extract round1_pruned_SNPs_to_extract_", n_snp, ".txt --recode tab --out ",
+                          temp_path))
+            # Process ped and map_files
+            ped_new <- tibble(fread(paste0(temp_path, ".ped"), header = FALSE))
+            ped_new <- ped_new %>% 
+              select(!V1:V6) %>%
+              mutate_all(dominant_coding_fn) %>%
+              mutate(ID2 = ped_new$V1, .before = 1) %>%
+              left_join(etas) %>%
+              relocate(y, .before = 1) %>%
+              select(-ID2)
+            snp_names <- tibble(fread(paste0(temp_path, ".map"), header = FALSE)) %>%
+              select(old = V2) %>%
+              left_join(dict_snps) %>%
+              mutate(new = ifelse(is.na(new), old, new)) %>%
+              pull(new)
+            colnames(ped_new) <- c("y", snp_names)
+            
+            top_covariate_tibble <- get_top_covar_tb_ml(ped_new, ml_methods[[k]], j, cor_tb1, set_seed)
+          } else if (ml_methods[[k]] %in% c("gwas", "gwas_glmnet", "gwas_rf")) { 
+            
+            # Get new dataset
+            temp_path <- paste0("new_temp_round1_", n_snp)
+            system(paste0("/pub59/iasiimwe/plink1.9/plink --bfile ", dat_patho,
+                          " --extract round1_pruned_SNPs_to_extract_", n_snp, ".txt  --make-bed --out ", 
+                          temp_path))
+            
+            # Save etas to use as phenotype file
+            etas %>%
+              select(FID = ID2, IID = ID2, y) %>%
+              write.table(paste0("pheno_", temp_path, ".txt"), sep = " ", row.names = FALSE, quote = FALSE, na = "NA")
+            
+            # Run GWAS in plink
+            system(paste0("/pub59/iasiimwe/plink2 --bfile ", temp_path, " --pheno ", 
+                          paste0("pheno_", temp_path, ".txt --glm dominant --out gwas_"), temp_path))
+            
+            # Read the results
+            results <- as_tibble(fread(paste0("gwas_", temp_path, ".y.glm.linear"))) 
+            colnames(results) <- c("CHR", "BP", "SNP", "alleleA", "alleleB", "A1", "TEST", "OBS_CT", "BETA", "SE", "T_STAT", "P")
+            
+            # Get top SNPs
+            results <- results %>%
+              select(old = SNP, P) %>%
+              arrange(P)
+            
+            if (ml_methods[[k]] == "gwas") {
+              top_covariate_tibble <- results[1:n_true_snps, ] %>%
+                select(old) %>%
+                left_join(dict_snps) %>%
+                mutate(new = if_else(is.na(new), old, new)) %>%
+                select(Covariates = new) %>%
+                left_join(cor_tb1) %>% 
+                mutate(Method = ml_methods[[k]], Simulation = j, .before = Covariates) 
+              
+            } else {
+              # Get the top x SNPs
+              topx_snps <- results[1:min(nrow(results), topx),] %>%
+                select(old) %>%
+                left_join(dict_snps) %>%
+                mutate(new = if_else(is.na(new), old, new)) %>% 
+                pull(new)
+              new_ml_method <- ifelse(ml_methods[[k]] == "gwas_glmnet", "glmnet", "rf") 
+              top_covariate_tibble <- get_top_covar_tb_ml(study %>% select(y, any_of(topx_snps)), 
+                                                          new_ml_method, j, cor_tb1, set_seed)
+            }
+          } else {
+            stop("Unknown method!")
+          }
+        }
+        
+        method_list[[k]] <- bind_rows(method_list[[k]], top_covariate_tibble)
+        end <- Sys.time()
+        time_list[[k]]$start[j] <- paste("T", as.character(ymd_hms(start)))
+        time_list[[k]]$end[j] <- paste("T", as.character(ymd_hms(end)))
+      }
+      
+      message(paste0("Effect Size: ", effect_scenario, 
+                     "; NSNPs: ", n_snp, 
+                     "; ", round(j*100/n_datasets, 3), "% complete!"))
+    }
+    for (k in seq_along(ml_methods)) {
+      write.csv(time_list[[k]], paste0(folder_path, "/pruned_", n_snp, "_", ml_methods[[k]], "_time.csv"), row.names = FALSE)
+      write.csv(method_list[[k]], paste0(folder_path, "/pruned_", n_snp, "_", ml_methods[[k]], "_sim_results.csv"), row.names = FALSE)
+    } 
+  }
+}

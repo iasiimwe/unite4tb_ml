@@ -4,6 +4,8 @@ library(tidyverse)
 
 # Number of datasets
 n_datasets <- 100
+plink_path <- "/pub59/iasiimwe/plink1.9/plink"
+plink2_path <- "/pub59/iasiimwe/plink2"
 
 # Set working directory
 setwd("/pub59/iasiimwe/TB/datasets")
@@ -18,7 +20,7 @@ sex <- tibble(fread("/pub59/iasiimwe/TB/Gdata/chr1_filtered.fam", header = FALSE
 write.table(sex, file = "sex_update.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
 
 # Get chromosome 1 (1,255,959 SNPs) as you update sex
-plink_command <- "/pub59/iasiimwe/plink2 --bfile /pub59/iasiimwe/TB/Gdata/chr1_filtered --update-sex sex_update.txt --make-bed --out luhya2"
+plink_command <- paste0(plink2_path, " --bfile /pub59/iasiimwe/TB/Gdata/chr1_filtered --update-sex sex_update.txt --make-bed --out luhya2")
 system(plink_command)
 
 # Add folders if they don't exist
@@ -36,7 +38,7 @@ for (i in 1:n_datasets) {
   # R2 == 0.1
   # ---------
   # MAFs
-  system("/pub59/iasiimwe/plink2 --bfile luhya2 --freq --out luhya")
+  system(paste0(plink2_path, " --bfile luhya2 --freq --out luhya"))
   
   Sys.sleep(1)
   
@@ -55,18 +57,18 @@ for (i in 1:n_datasets) {
   write.table(sampled_snps$ID, file = "maf_0_1_snps.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
   
   # Find the SNPs tagged by these SNPs (at r2 of 0.1) - big ld window to ensure the entire chromosome is covered
-  system("/pub59/iasiimwe/plink1.9/plink --bfile luhya2 --r2 --ld-snp-list maf_0_1_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.1 --out tagged_snps_0_1")
+  system(paste0(plink_path, " --bfile luhya2 --r2 --ld-snp-list maf_0_1_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.1 --out tagged_snps_0_1"))
   ## Get tagging SNPs and then exclude them (unique works on adjacent lines so sorting is crucial)
   Sys.sleep(1)
-  system("tail -n +2 tagged_snps_0_1.ld | awk '{$1=$1; print}' | cut -f6 -d' ' | grep -F -v -f maf_0_1_snps.txt | sort | uniq > tagged_snps_0_1_unique.txt")
+  system("tail -n +2 tagged_snps_0_1.ld | awk '{$1=$1; print}' | cut -f6 -d' ' | grep -F -v -f maf_0_1_snps.txt | sort | uniq > tagged_snps_0_1_exclude.txt")
   Sys.sleep(1)
-  system("/pub59/iasiimwe/plink1.9/plink --bfile luhya2 --exclude tagged_snps_0_1_exclude.txt --make-bed --out luhya_0_1")
+  system(paste0(plink_path, " --bfile luhya2 --exclude tagged_snps_0_1_exclude.txt --make-bed --out luhya_0_1"))
   Sys.sleep(1)
   
   # R2 == 0.5
   # ---------
   # MAFs
-  system("/pub59/iasiimwe/plink2 --bfile luhya_0_1 --freq --out luhya")
+  system(paste0(plink2_path, " --bfile luhya_0_1 --freq --out luhya"))
   Sys.sleep(1)
   
   # Randomly select 3 tag SNPs for each of the 3 MAFs (5%, 10%, 20%) 
@@ -84,18 +86,18 @@ for (i in 1:n_datasets) {
   write.table(sampled_snps$ID, file = "maf_0_5_snps.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
   
   # Find the SNPs tagged by these SNPs (at r2 of 0.5) - big ld window to ensure the entire chromosome is covered
-  system("/pub59/iasiimwe/plink1.9/plink --bfile luhya_0_1 --r2 --ld-snp-list maf_0_5_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.5 --out tagged_snps_0_5")
+  system(paste0(plink_path, " --bfile luhya_0_1 --r2 --ld-snp-list maf_0_5_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.5 --out tagged_snps_0_5"))
   Sys.sleep(1)
   ## Get tagging SNPs and then exclude them
   system("tail -n +2 tagged_snps_0_5.ld | awk '{$1=$1; print}' | cut -f6 -d' ' | grep -F -v -f maf_0_5_snps.txt | sort | uniq > tagged_snps_0_5_exclude.txt")
   Sys.sleep(1)
-  system("/pub59/iasiimwe/plink1.9/plink --bfile luhya_0_1 --exclude tagged_snps_0_5_exclude.txt --make-bed --out luhya_0_5")
+  system(paste0(plink_path, " --bfile luhya_0_1 --exclude tagged_snps_0_5_exclude.txt --make-bed --out luhya_0_5"))
   Sys.sleep(1)
   
   # R2 > 0.5
   # --------
   # MAFs
-  system("/pub59/iasiimwe/plink2 --bfile luhya_0_5 --freq --out luhya")
+  system(paste0(plink2_path, " --bfile luhya_0_5 --freq --out luhya"))
   Sys.sleep(1)
   
   ## Randomly select 3 SNPs for each of the 3 MAFs (5%, 10%, 20%)
@@ -115,7 +117,7 @@ for (i in 1:n_datasets) {
   write.table(sampled_snps$ID, file = "maf_0_5_above_snps.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
   
   # Find the SNPs tagged by these SNPs (at r2 of 0.5) - big ld window to ensure the entire chromosome is covered
-  system("/pub59/iasiimwe/plink1.9/plink --bfile luhya_0_5 --r2 --ld-snp-list maf_0_5_above_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.5 --out tagged_snps_0_5_above")
+  system(paste0(plink_path, " --bfile luhya_0_5 --r2 --ld-snp-list maf_0_5_above_snps.txt --ld-window-kb 300000000 --ld-window 999999999 --ld-window-r2 0.5 --out tagged_snps_0_5_above"))
   Sys.sleep(1)
   # Get tagging SNPs 
   system("tail -n +2 tagged_snps_0_5_above.ld | awk '{$1=$1; print}' | cut -f6 -d' ' | grep -F -v -f maf_0_5_above_snps.txt | sort | uniq > tagged_snps_0_5_above_include.txt")
@@ -202,17 +204,17 @@ for (i in 1:n_datasets) {
   write.table(true_covar, file = paste0("true_covar/true_snps_", i, ".txt"), quote = FALSE, row.names = FALSE, col.names = FALSE)
   
   # Get the datasets
-  system(paste0("/pub59/iasiimwe/plink2 --bfile luhya2 --make-bed --extract dat_10_6_snps.txt --out 10_6/dat_10_6_", i))
+  system(paste0(plink2_path, " --bfile luhya2 --make-bed --extract dat_10_6_snps.txt --out 10_6/dat_10_6_", i))
   Sys.sleep(1)
-  system(paste0("/pub59/iasiimwe/plink2 --bfile 10_6/dat_10_6_", i, " --make-bed --extract dat_10_5_snps.txt --out 10_5/dat_10_5_", i))
+  system(paste0(plink2_path, " --bfile 10_6/dat_10_6_", i, " --make-bed --extract dat_10_5_snps.txt --out 10_5/dat_10_5_", i))
   Sys.sleep(1)
-  system(paste0("/pub59/iasiimwe/plink2 --bfile 10_5/dat_10_5_", i, " --make-bed --extract dat_10_4_snps.txt --out 10_4/dat_10_4_", i))
+  system(paste0(plink2_path, " --bfile 10_5/dat_10_5_", i, " --make-bed --extract dat_10_4_snps.txt --out 10_4/dat_10_4_", i))
   Sys.sleep(1)
-  system(paste0("/pub59/iasiimwe/plink2 --bfile 10_4/dat_10_4_", i, " --make-bed --extract dat_10_3_snps.txt --out 10_3/dat_10_3_", i))
+  system(paste0(plink2_path, " --bfile 10_4/dat_10_4_", i, " --make-bed --extract dat_10_3_snps.txt --out 10_3/dat_10_3_", i))
 
   message(paste0("##################\n##################\n##################\n", round(i * 100/n_datasets, 2), "% complete\n##################\n##################\n##################"))
 }
-# system("wc -l 10_3/dat_10_3_2.bim")
+
 
 
 

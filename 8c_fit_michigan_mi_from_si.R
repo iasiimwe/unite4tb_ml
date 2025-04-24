@@ -11,8 +11,46 @@ select <- dplyr::select
 filter <- dplyr::filter
 mutate <- dplyr::mutate
 
-# Dominant coding function
-dominant_coding_fn <- function(x) {
+# Dominant coding function 
+dominant_coding_fn <- function(x, r2, y = 1) { # SNPs were excluded so 100% missingness 
+  # Define an uncertainty factor based on r2 (higher r2 -> less randomness, lower r2 -> more randomness)
+  uncertainty_factor <- 1 - r2  # More uncertainty for lower r2 values
+  
+  # Initialize new_x to store the rounded value
+  new_x <- rep(NA_real_, length(x))
+  
+  # Incorporate missingness into the uncertainty factor 
+  uncertainty_factor <- uncertainty_factor * y
+  
+  # Loop over each value in x
+  for (i in seq_along(new_x)) {
+    # Parse genotype probabilities from a string into a numeric vector
+    probs <- as.numeric(strsplit(x[i], ",")[[1]]) 
+    
+    # Add Gaussian noise to all probability components
+    noisy_probs <- probs + rnorm(3, mean = 0, sd = uncertainty_factor)
+    
+    # Min-max normalization: (the most negative will have zero probability)
+    noisy_probs <- (noisy_probs - min(noisy_probs)) / (max(noisy_probs) - min(noisy_probs))
+    
+    # Normalize to ensure sum of probabilities is 1
+    noisy_probs <- noisy_probs / sum(noisy_probs)
+    
+    # Sample a genotype (0, 1, or 2) using the adjusted probabilities
+    new_x[i] <- sample(c(0, 1, 2), size = 1, prob = noisy_probs)
+  }
+  
+  # Now apply dominant coding
+  x <- as.character(new_x + 3) # We will not rely on the original wildtypes but on the frequency (consistent with earlier coding)
+  y <- table(x)
+  y <- names(sort(-y)) # Sort in descending order, assume mutant type is the least abundant
+  if (length(y) == 3) x <- gsub(y[[3]], "1", x) # Give mutant homozygotes "1"
+  if (length(y) > 1) x <- gsub(y[[2]], "1", x) # Give heterozygotes "1" 
+  x <- gsub(y[[1]], "0", x) # Give homozygotes 0
+  return(as.numeric(x))
+} 
+
+dominant_coding_fn2 <- function(x) {
   x <- gsub(" ", "", x) 
   x[x == "00"] <- NA
   y <- table(x)
@@ -23,12 +61,19 @@ dominant_coding_fn <- function(x) {
   return(as.numeric(x))
 }
 
-# Clean up function (in case we have any values below 0 or above 2)
-dominant_coding_fn <- function(x) {
-  x <- round(x)
-  x[x < 0] <- 0
-  x[x > 1] <- 1
-  return(x)
+# Function to generate multiple imputed datasets
+generate_imputed_datasets <- function(df, r2_df, n = 5, seed = 7) {
+  set.seed(seed)
+  imputed_datasets <- list()
+  for (i in 1:n) {
+    imputed_dataset <- df
+    for (col in paste0("SNP", 1:9)) {
+      imputed_dataset[[col]] <- dominant_coding_fn(x = df[[col]], r2 = pull(filter(r2_df, SNP == col))) #
+    }
+    imputed_datasets[[i]] <- imputed_dataset
+    # imputed_datasets[[i]] <- mutate_at(df, vars(!ID2), dominant_coding_fn)
+  }
+  return(imputed_datasets)
 }
 
 # Rubin's rule function to pool estimates from multiple imputations
@@ -64,13 +109,12 @@ omega_Cl <- omega_squared_fn(17.5)
 
 sim_date <-"23_12_2024"
 n_datasets <- 100
-effect_size <- 0.5
 
-imputation_methods <- c("pmm", "midastouch", "sample", "cart", "rf", "mean", "norm", "ri")
-mechanisms <- c("MCAR", "MAR", "MNAR")
-missing_percentages <- c(5, 10, 20, 50)
+imputation_methods <- c("michigan_afr_ms")
+mechanisms <- c("MCAR")
+missing_percentages <- c(5, 10)
 
-for (effect_scenario in c("high", "low")) {
+for (effect_scenario in c("low", "high")) {
   effect_size <- ifelse(effect_scenario == "high", 0.5, 0.15)
   
   # Add folders if they don't exist
@@ -101,23 +145,79 @@ for (effect_scenario in c("high", "low")) {
           dv_dat <- read_csv(paste0("sim_DV_", effect_scenario, "/sim_data", j, "_", sim_date, ".csv"), show_col_types = FALSE) %>%
             select(!SNP1:SNP9) # Remove complete SNP data
           
-          # Path to imputed dataset
-          mice_path <- paste0("mice/", imputation_method, "_", missing_percentage, "_", mechanism, "_", j, ".rds")
+          # Extract reference population from imputation method
+          ref_population <- gsub("michigan_|_ms", "", imputation_method)
           
-          # Skip if the file does not exist
-          if(!file.exists(mice_path)) next
+          # Get job ID for this dataset
+          job_id_path <- ifelse(imputation_method == "michigan_afr", 
+                                paste0("michigan/job_id_", mechanism, "_", missing_percentage, "_", ref_population, ".csv"),
+                                paste0("michigan/job_id_", ref_population, ".csv"))
           
-          # Read imputed dataset
-          imputed_dat <- read_rds(mice_path)
+          job_id <- read_csv(job_id_path, show_col_types = FALSE) %>%
+            filter(dataset == j) %>%
+            pull(job_id)
+          
+          # Check if the data path exists (skip if it doesn't)
+          dat_path <- ifelse(imputation_method == "michigan_afr", 
+                             paste0("michigan/chr", j, "_", job_id, "_", mechanism, "_", missing_percentage, "_extracted.GP.FORMAT"),
+                             paste0("michigan/chr", j, "_", job_id, "_extracted.GP.FORMAT"))   
+          
+          if(!file.exists(dat_path)) next
+          
+          # Get the imputed data
+          ped_snps <- fread(dat_path)
+          colnames(ped_snps) <- gsub("_.*", "", colnames(ped_snps))
+          
+          # True covariates
+          true_snps <- fread(paste0("true_covar/true_snps_", j, "_GRCh37.txt"), header = TRUE, sep = " ")$GRCh37_BP
+          
+          # Retain only the true SNPs
+          ped_snps <- ped_snps[POS %in% true_snps]
+          ped_snps[, SNP := paste0("SNP_", POS)]
+          setcolorder(ped_snps, "SNP")  # Move SNP to the first column
+          ped_snps[, c("CHROM", "POS") := NULL]  # Remove CHROM and POS columns
+          
+          # Retain only the first occurrence of each duplicated SNP
+          # ped_snps %>% group_by(SNP) %>% slice_head(n = 1)
+          ped_snps <- ped_snps[, .SD[1], by = SNP]
+          
+          # Reshape from wide to long (gather samples under an "ID2" column)
+          ped_snps <- melt(ped_snps, id.vars = "SNP", variable.name = "ID2", value.name = "Value")
+          
+          # Reshape back to wide (turn SNP values into columns)
+          ped_snps <- dcast(ped_snps, ID2 ~ SNP, value.var = "Value")
+          
+          # Retain only the first occurrence of each duplicated column and get only the true SNPs
+          ped_snps <- ped_snps %>%
+            select(ID2, any_of(paste0("SNP_", true_snps))) %>%
+            tibble()
+          colnames(ped_snps) <- c("ID2", paste0("SNP", 1:(ncol(ped_snps) - 1)))
+          
+          # Check if all 9 SNPs were imputed (another reason for failure - track both)
+          if(ncol(ped_snps) < 10) next
           
           # Check if the data was completely imputed - it it failed, skip
-          dat_check <- tibble(complete(imputed_dat, 1, include = FALSE)) %>%
-            select(SNP1:SNP9)
-          if (max(apply(dat_check[, sapply(dat_check, is.numeric)], 2, function(x) sum(is.na(x)))) > 0) next
+          if (max(apply(ped_snps[, sapply(ped_snps, is.character)], 2, function(x) sum(is.na(x)))) > 0) next
+          
+          # Get R2 values
+          r2_file <- ifelse(imputation_method == "michigan_afr", 
+                            list(readLines(paste0("michigan/info_scores_", ref_population, "_", mechanism, "_", missing_percentage, ".csv"))),
+                            list(readLines(paste0("michigan/info_scores_", ref_population, ".csv"))))[[1]]
+          r2_lines <- r2_file[str_detect(r2_file, paste0("^", j, ","))]
+          r2_tb <- tibble(position = gsub("SNP_", "", true_snps)) %>%
+            mutate(SNP = paste0("SNP", row_number())) %>%
+            left_join(tibble(position = gsub(".*,", "", str_extract(r2_lines, "^(?:[^,]+,){2}([0-9]+)")),
+                             r2 = as.numeric(gsub("R2=", "", gsub(";.*", "", str_extract(r2_lines, "R2=.*")))))) %>%
+            select(-position) %>%
+            group_by(SNP) %>%
+            slice_head(n = 1)
+          
+          # Obtain the multiply imputed datasets
+          imputed_dat <- generate_imputed_datasets(ped_snps, r2_tb, n = missing_percentage)
           
           # Create a tibble to store results for pooling
           pooled_tb <- tibble(
-            ka = rep(NA_real_, imputed_dat$m),
+            ka = rep(NA_real_, missing_percentage),
             ka_se = NA_real_,
             Cl = NA_real_,
             Cl_se = NA_real_,
@@ -129,11 +229,9 @@ for (effect_scenario in c("high", "low")) {
             b_se = NA_real_
           )
           
-          for (m in 1:imputed_dat$m) {
-            ped_snps <- tibble(complete(imputed_dat, m, include = FALSE)) %>%
-              select(SNP1:SNP9) %>%
-              mutate_all(dominant_coding_fn) %>%
-              mutate(ID2 = unique(dv_dat$ID2))
+          for (m in 1:missing_percentage) {
+            ped_snps <- imputed_dat[[m]] %>%
+              select(SNP1:SNP9, ID2) 
             
             # Find columns that have only wild-type
             snps_to_remove <- colnames(ped_snps)[apply(ped_snps[, sapply(ped_snps, is.numeric)], 2, max) == 0]
@@ -145,10 +243,10 @@ for (effect_scenario in c("high", "low")) {
               left_join(dv_dat) %>%
               relocate(ID:WT, .before = 1) %>%
               select(-NTIME, -ID2) 
-            write.csv(dat, paste0("temp_mice_monolix_", imputation_method, ".csv"), row.names = FALSE)
+            write.csv(dat, paste0("temp_mice_monolix_", imputation_method, "_", effect_scenario, ".csv"), row.names = FALSE)
             
             initializeLixoftConnectors(software = "monolix", path = "/pub59/iasiimwe/Lixoft/MonolixSuite2023R1/", force = TRUE)
-            newProject(data = list(dataFile = paste0("temp_mice_monolix_", imputation_method, ".csv"),
+            newProject(data = list(dataFile = paste0("temp_mice_monolix_", imputation_method, "_", effect_scenario, ".csv"),
                                    headerTypes = c("id", "time", "evid", "occ", "amount", "observation", 
                                                    "catcov", "regressor", rep("catcov", 9 - length(snps_to_remove)))),
                        modelFile = 'tb_base_vinnard.txt')
@@ -293,6 +391,5 @@ for (effect_scenario in c("high", "low")) {
     }
   }
 }
-
 
 

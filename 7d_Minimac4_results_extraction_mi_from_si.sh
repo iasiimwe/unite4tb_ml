@@ -6,7 +6,7 @@ for j in {1..100}; do
         ref_population=$(echo "$imputation_method" | sed 's/michigan_//')
 
         # Initialize CSV file with headers if not already present
-        csv_file="michigan/time_${ref_population}.csv"
+        csv_file="michigan/time_${ref_population}_multiple_from_single.csv"
         if [[ ! -f "$csv_file" ]]; then            
             echo "dataset,start,end" > "$csv_file"
         fi
@@ -42,8 +42,8 @@ for j in {1..100}; do
         to_grep=$(echo "$true_snps_m" | paste -sd'|' -)
         grep -E "$to_grep" temp_michigan.bim | awk '{print $2}' > true_snps_m.txt
 
-        # Convert to ped format and extract only the true_snps
-        /pub59/iasiimwe/plink1.9/plink --bfile temp_michigan --extract true_snps_m.txt --recode tab --out michigan/chr${j}_${job_id}_extracted 
+        # Obtain genotype probabilities
+        /pub59/iasiimwe/vcftools_0.1.13/bin/vcftools --gzvcf unzipped/chr1.dose.vcf.gz --out michigan/chr${j}_${job_id}_extracted --snps true_snps_m.txt --extract-FORMAT-info GP
 
         # End time for the current iteration
         end=$(date +"%Y-%m-%dT%H:%M:%S.%6N")

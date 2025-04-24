@@ -9,7 +9,7 @@ TOKEN <- "abc123..."
 
 n_datasets <- 100
 
-for (ref_population in c("afr", "eur")) {
+for (ref_population in c("afr")) {
   # ID storage tibble (time will be tracked from the logs)
   id_tb <- tibble(dataset = c(1:n_datasets), 
                   job_id = vector("character", n_datasets))
@@ -45,8 +45,8 @@ for (ref_population in c("afr", "eur")) {
                    toupper(ref_population), ": ", round(k * 100/n_datasets, 2), "% complete!", 
                    "\n##################\n##################\n##################"))
     
-    # Check if k is a multiple of 5 (we want to run at most 5 jobs on the imputation server)
-    if (k %% 5 == 0) {
+    # Check if k is a multiple of 10 (we want to run at most 10 jobs on the imputation server)
+    if (k %% 10 == 0) {
       message("k is a multiple of 5. Pausing for 8 minutes...")
       Sys.sleep(8 * 60) # Pause for 8 minutes (test runs took about 6.5 minutes i.e. wait for 5 runs to complete before submitting again)
       message("Resuming execution.")

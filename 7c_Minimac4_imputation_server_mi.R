@@ -22,7 +22,7 @@ library(tidyverse)
 # Relevant function
 not_scientific <- function(x) trimws(format(x, scientific = FALSE))
 
-TOKEN <- "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsIm5iZiI6MTczNzIwMjMxNSwibWFpbCI6ImkuYXNpaW13ZUBsaXZlcnBvb2wuYWMudWsiLCJhcGlfaGFzaCI6InRxVm9FS2tFUVpPc01XVHExcDFsNUlOUnhQRGdpciIsInJvbGVzIjpbXSwiaXNzIjoiY2xvdWRnZW5lIiwibmFtZSI6ImFkbWluIiwiYXBpIjp0cnVlLCJleHAiOjM4ODQ2ODU5NjIsInRva2VuX3R5cGUiOiJBUElfVE9LRU4iLCJpYXQiOjE3MzcyMDIzMTUsInVzZXJuYW1lIjoiYWRtaW4ifQ.VkVCVJtWgkwdaNl11f0d1Qmfv3OvIHBSeoYpiqwPUj4"
+TOKEN <- "..."
 
 n_datasets <- 100
 mechanisms <- c("MCAR", "MAR", "MNAR")

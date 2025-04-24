@@ -31,7 +31,7 @@ for imputation_method in "michigan_afr" "michigan_eur"; do
         to_filter=$(echo "$true_snps_m" | paste -sd'|' -)
         
         # Filter the data, add the dataset column, and append to the CSV file
-          # .info.gz files are too large to view unzipped, so use the command gzip -dc unzipped/chr1.info.gz | less (press ‘q’ to quit)
+          # .info.gz files are too large to view unzipped, so use the command gzip -dc unzipped/chr1.info.gz | less (press â€˜qâ€™ to quit)
         gzip -dc unzipped/chr1.info.gz | awk -v pattern="$to_filter" -v dataset="$j" '
            $2 ~ pattern {print dataset "," $1 "," $2 "," $3 "," $4 "," $5 "," $6 "," $7 "," $8 }' >> "$csv_file"
 

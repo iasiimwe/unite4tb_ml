@@ -106,7 +106,4 @@ The analysis is conducted in a **Linux-based command-line environment**, utilizi
    Rscript 15_figs.R  
    Rscript 15_figS15.R
 
-   # Test imputation and covariate selection methods on clinical/diobank datasets
-   Rscript 16_iwpc_warfarin.R  
-   Rscript 16_ukb.R  
-   Rscript 16_warfarin.R
+   # Test imputation and covariate selection methods on clinical/diobank datasets (use scripts: 16_iwpc_warfarin.R, 16_ukb.R, and 16_warfarin.R)
